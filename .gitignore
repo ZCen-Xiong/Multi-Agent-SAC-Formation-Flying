@@ -1,0 +1,8 @@
+runs/
+*.png
+algotest.py
+cw_transfer.py
+temp_rev.py
+__pycache__/
+Orbit_Dynamics/Lambert_Solve.py
+Orbit_Dynamics/Coordinate_Transformation.py
