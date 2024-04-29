@@ -20,6 +20,7 @@ from sac import SAC
 #from torch.utils.tensorboard import SummaryWriter
 from replay_memory import ReplayMemory
 import env 
+from env import multi_step
 import time
 import matplotlib.pyplot as plt
 import numpy as np
@@ -96,164 +97,8 @@ agent = SAC(env_f.observation_space.shape[0], env_f.action_space, args) #discret
 在cmd里查一下6006端口有没有占用, 用taskkill全杀了之后再tensorboard一下
     taskkill /F /PID 26120
 '''
-
 # Memory
-memory = ReplayMemory(args['replay_size'])
-
-def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param):
-    sc_m = 1e-3       
-    # 传入的常数 dep_param = [horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex]  
-    horizon = dep_param[0]
-    num_ff = dep_param[1]
-    ref_sat_distro = dep_param[2]
-    heading_ex = dep_param[3]
-    dT_ex = dep_param[4]
-    T_f_ex = dep_param[5]
-
-
-    s_len = 6*horizon # 智能体数据间的间隔, 意思就是每个智能体有多少步
-    r_len = 6         # 时间相邻两个状态的数据间隔
-    Sat_inject_flag = np.zeros((3,1))  # 三个智能体的入轨状态
-    Sat_done_flag = np.zeros((3,1))  # 三个智能体的完成状态
-    '''提前开辟存储空间,为了在所有智能体执行完动作后, 统一统计动作reward导致的不能在3号智能体还没算完的时候
-    你就把memorypush进去了, 你得等3个全部算完, 你就必须得把next——state啥的这些玩意存下来'''
-    data_saver4push = np.empty((num_ff, 7), dtype=object)
-
-    '''临时变量, 存放每个agent在每个step的参考星的观测光锥'''
-    # 当前的轨道序列 每个智能体, 参考包括自己在内的3个智能体位置进行决策
-    multi_agent_seq = np.zeros((3*6*horizon,))
-    # 无智能体干预的轨道序列
-    # multi_dummy_seq = np.zeros((3*6*horizon,)) # 0425 这玩意没有意义，预测用不上，规划动作用不上，输出奖励用不上
-    # 目标轨道的序列
-    multi_target_seq = np.zeros((3*6*horizon,)) 
-    next_Multi_Agent_state = np.zeros((num_ff,6))
-    next_Multi_target_state = np.zeros((num_ff,6))
-    next_Multi_dumm_state = np.zeros((num_ff,6)) 
-
-    # 自己把自己坑了，输入是一维，那从此定个规则吧，有大写字母是矩阵，小写是一维 0472241
-    input_multi_dumm_state = np.zeros((3*6,))
-
-    next_Multi_Agent_pos = np.zeros((num_ff,3))
-    next_Multi_dummy_pos = np.zeros((num_ff,3))
-
-    for sat_index in range(num_ff):
-        # 下面整理输入
-        # 读取agent的参考, 例如, 1号agent要参考6,3,那么序列的顺序就是1,6,3
-        local_ref = np.array([sat_index, *ref_sat_distro[sat_index,:]])
-
-        for sat_i, ref_i in zip(range(3), local_ref):
-            for ri in range(0,horizon):
-                # 预测序列是按这样布置的, 先把第一个智能体的1-5步放完, 再把第二个智能体的1-5步放完, 再放第三个智能体的1-5步
-                #   sat1 t1-t5, sat2 t1-t5, sat3 t1-t5
-                t_r = (ri+1)*dT_ex
-                # 这种就是按照 先排完一个智能体的全部数据, 再排另外一个智能体
-                index_start = sat_i*s_len + ri*r_len  
-                index_end = index_start + 6
-                multi_agent_seq[index_start:index_end] = Free(t_r,0,Multi_Agent_state[ref_i,:], 1)
-                # target 的外推原点一直是公元0年 所以加一个 dT_ex
-                multi_target_seq[index_start:index_end] = Free(dT_ex + t_r,0, Multi_target_state_ini[ref_i,:], 1)
-           
-            '''我去，这个dumm是 来自每个真实智能体 在上一步输出的 next_Multi_dumm_state 构成的，然后
-             在input里取出自己想要的即可，这样分立地都实现了MPC外推，我真太牛逼了 '''
-            input_multi_dumm_state[sat_i*6:sat_i*6+6] = Multi_dumm_state[ref_i,:]
-
-        ''' 1e3是为了 放缩, 让状态在01之间
-        顺便说一下, 区分state_env_input和state, 一个是个智能体用的, 一个是整个场景包括7个智能体用的
-        #   下面这个是输入给agent的 所以 要放缩 
-        '''
-
-        # 这个地方 dumm的形状不对 不是一维....
-        state_env_input = np.concatenate((multi_agent_seq*sc_m, multi_target_seq*sc_m, heading_ex, np.array([travel])))
-        action = agent.select_action(state_env_input)  # 开始输出actor网络动作
-        # 注意，只有state_env里的东西是除以了1000的，其他变量照常输出
-        next_state_env, next_dumm_state, next_agent_pos, next_dummy_pos, J_f_agent,J_f_dummy,reward, dV = env_f.step(action, state_env_input,input_multi_dumm_state) # Step
-        '''涉及到太多运算了, 把状态都提出来算了，next_state_env里是放缩过的,   没放缩:next_agent_pos, next_dummy_pos  '''
-        '''
-        # Ignore the "done" signal if it comes from hitting the time horizon.
-        由于智能体只学一步, 所以memory只记录一步的
-         即使状态里80%的东西都被我扔掉了, 不作为实际的运动, 他们也是有用的, 在网络里用于校准Q网络
-        由于这里算出来的奖励没有用, 因为参考星的位置都是估计出来的, 不是真实的, 得所有星都算完一遍之后, 再评估
-        传入放缩过变量
-        ''' 
-        data_saver4push[sat_index,:] = [action, state_env_input, next_state_env, J_f_agent, J_f_dummy, reward, dV]
-        ''' 传递给下一个时刻的状态(while级别的下一个循环）, 有且仅有 第n个卫星的 一个 step时间之后 的状态 1*6'''
-        '''读出next_state_en的状态时候，需要反放缩'''
-        '''与内部157行左右区分！，这里state只读出 1个星（真实星）的状态 6个 , 不同星是用行来区分的\需要反放缩'''
-        next_Multi_Agent_state[sat_index,:] = next_state_env[0:6]/sc_m
-        next_Multi_target_state[sat_index,:] = next_state_env[3*horizon*6:3*horizon*6 + 6]/sc_m
-        '''只有第一个智能体的dumm状态是需要的  不需要放缩'''
-        next_Multi_dumm_state[sat_index,:] = next_dumm_state[0:6]
-        '''仅用于计算面积奖励 读出pos的时候 不需要放缩
-            只有第一个智能体和智障体 的pos状态是需要的'''
-        next_Multi_Agent_pos[sat_index,:] = next_agent_pos[0,:]
-        next_Multi_dummy_pos[sat_index,:] = next_dummy_pos[0,:]
-
-    # 哪个智能体的时间都tm一样，随便抓一个就行 TRAVEL的定义域是[0,1]
-    travel += dT_ex/T_f_ex
-
-    # 开始计算奖励
-    ''' 1、先计算heading_reward_all 有点尴尬的是, 我这个heading area只计算三个星的....后面4,5,6星得改改 '''
-    heading_reward_all = env_f.calculate_area(next_Multi_Agent_pos) - env_f.calculate_area(next_Multi_dummy_pos)
-
-    # 再依次push数据
-    isInject = 0
-    isDone = 0
-    reward_all = 0
-    for sat_index in range(num_ff):
-        '''[action, state_env_input, next_state_env, J_f_agent, J_f_dummy, reward, dV]'''
-        J_indv_agent = data_saver4push[sat_index,3]
-        J_indv_dummy = data_saver4push[sat_index,4]
-        '''内部奖励有没有意义呢, 应该还是有的'''
-        reward_pseudo = data_saver4push[sat_index,5]
-        dV_indv = data_saver4push[sat_index,6]
-        '''2、计算入轨奖励, 由于智能体分别动作, 所以done与否其实只该评价一个智能体''' 
-        exc_t_puni = 0.0
-        exc_t_rewa = 1.0
-        if np.linalg.norm(J_indv_dummy)<1:
-            exc_t_puni = 1.0
-        if np.linalg.norm(J_indv_dummy)<1e-1:
-            exc_t_rewa = 0.0
-        # 仿照内部
-        reward_push = exc_t_rewa * (1 - travel**(1/2)) *heading_reward_all - exc_t_puni*1e-3*travel**(1/5)*(
-            dV_indv + 3*(np.linalg.norm(J_indv_agent)-np.linalg.norm(J_indv_dummy))) + reward_pseudo*0.2
-        
-        if np.linalg.norm(J_indv_agent)-np.linalg.norm(J_indv_dummy)>100 and np.linalg.norm(J_indv_dummy)<1:
-            reward_push = -1e3
-
-        # 收敛极限
-        Conv_tol = 5
-        done_push = False
-        if travel >= 1.0 or np.linalg.norm(J_indv_agent) <= Conv_tol:
-            done_push = True
-
-            if Sat_done_flag[sat_index,0] == 0: 
-                    '''完成动作的智能体不再重复记录到达'''
-                    isDone += 1
-                    Sat_done_flag[sat_index,0] = 1
-            
-            if np.linalg.norm(J_indv_agent) > Conv_tol:
-                isInject += 0 #用来区分越界和到达目标
-                reward_push = 0
-            elif np.linalg.norm(J_indv_agent) <= Conv_tol and travel <= 1.0:
-                isInject += 1
-                if Sat_inject_flag[sat_index,0] == 0: 
-                    '''到达目标轨道的智能体不再重复获得奖励'''
-                    reward_push += 10000
-                    Sat_inject_flag[sat_index,0] = 1
-        '''[action, state_env_input, next_state_env, J_f_agent, J_f_dummy, reward, dV]'''
-        action_push = data_saver4push[sat_index,0]
-        state_push = data_saver4push[sat_index,1]
-        next_state_push = data_saver4push[sat_index,2]
-        memory.push(state_push, action_push, reward_push, next_state_push, done_push) # Append transition to memory
-        reward_all += reward_push
-    # 完成一次外推
-    All_Inject = False
-    Alldone = False
-    if isInject >= 3:
-        All_Inject = True
-    if isDone >= 3:
-        Alldone = True
-    return travel, next_Multi_Agent_state, next_Multi_dumm_state, All_Inject, Alldone, reward_all/num_ff     
+memory = ReplayMemory(args['replay_size'])  
 
 if args['task']=='Train':
     # Training Loop
@@ -275,7 +120,7 @@ if args['task']=='Train':
         episode_steps = 0
 
         '''start from here'''
-        agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 0.0, seed = None)
+        agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 1.0, seed = None)
         # reset之后得到的全是归一化的变量
         dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
         # 这个只是得到了7颗卫星的初始状态, 没有光锥状态, 切记勿搞混（7是示例, 因为物理中没有7做常数
@@ -300,7 +145,9 @@ if args['task']=='Train':
             travel, new_Multi_Agent_state, new_Multi_dumm_state, All_Inject, Alldone,reward_ave_all = multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
             Multi_Agent_state = new_Multi_Agent_state
             Multi_dumm_state = new_Multi_dumm_state
-            
+            if  episode_steps == 15:
+                pass
+                qq = 114
             ''''end here'''
             episode_steps += 1
             episode_reward += reward_ave_all # 没用gamma是因为在 sac 里求q的时候用了
@@ -326,7 +173,7 @@ if args['task']=='Train':
                     avg_reward_list.append(sum(episode_reward_list[-500:])/500)
                 else:
                     avg_reward_list.append(sum(episode_reward_list)/len(episode_reward_list))
-                if All_Inject >= num_ff:
+                if All_Inject:
                     success=True
                 break
 
@@ -344,28 +191,21 @@ if args['task']=='Train':
             done_num=0
             for _  in range(episodes):
                 '''start'''
-                # state = env_f.reset()
-                # episode_reward = 0
-                # Alldone = False
-                # steps = 0
-                # while not Alldone:
-                #     action = agent.select_action(state, evaluate=False) #evaluate为True时为确定性网络, 直接输出mean
-                #     next_state_env, reward, Alldone, All_Inject = env_f.step(action)
-
-                agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = None,ini_phi = None,seed = None)
+                agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 0.0, seed = None)
                 # reset之后得到的全是归一化的变量
-                dep_param = np.array([horizon, num_ff ,ref_sat_distro, T_f_ex, dT_ex], dtype=object)
+                dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
                 # 这个只是得到了7颗卫星的初始状态, 没有光锥状态, 切记勿搞混（7是示例, 因为物理中没有7做常数
                 '''每一轮的外推就是用这个状态'''
                 # 智能体的单个状态，用于迭代记录
                 Multi_Agent_state = np.zeros((num_ff,6))
                 Multi_target_state_ini = np.zeros((num_ff,6))
-                for sat_index in range(0, num_ff):            
+                for sat_index in range(num_ff):            
                     phase_diff = 2*np.pi/num_ff
                     pseu_t = phase_diff*sat_index
                     Multi_Agent_state[sat_index,:] = Free(pseu_t,0,agent_A,1)
                     # 一直保持初始
-                    Multi_target_state_ini[sat_index,:] = Free(pseu_t,0,target_A,1)    
+                    Multi_target_state_ini[sat_index,:] = Free(pseu_t,0,target_A,1)
+                #     
                 Multi_dumm_state = Multi_Agent_state
                 # 进入外推
                 # 外推嵌套关系：1、时间（2、挨个agent(3、agent参考的3个agent 挨个录入（4、每个被参考的agent计算horizon光锥）))
@@ -374,7 +214,7 @@ if args['task']=='Train':
                 test_steps = 0
                 while True: 
                     # new 和 next在这里代表的变量含义相同，区分内部外部
-                    travel, new_Multi_Agent_state, new_Multi_dumm_state, All_Inject, Alldone, reward_ave_all= multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
+                    travel, new_Multi_Agent_state, new_Multi_dumm_state, All_Inject, Alldone, reward_ave_all = multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
                     Multi_Agent_state = new_Multi_Agent_state
                     Multi_dumm_state = new_Multi_dumm_state
                     '''end'''
