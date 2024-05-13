@@ -184,7 +184,7 @@ class Rel_trans:
         raw_point = np.dot(alpha,normal_track) + np.dot(beta,radius_track)
 
         # 使用连续的
-        target_weight = travel**(1/5)
+        target_weight = travel**(1/2)
         # 修正后的路径航点 3*(h*6)
         pred_point = raw_point * (1-target_weight) + target_seq
 
@@ -326,8 +326,8 @@ def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, 
 
     s_len = 6*horizon # 智能体数据间的间隔, 意思就是每个智能体有多少步
     r_len = 6         # 时间相邻两个状态的数据间隔
-    Sat_inject_flag = np.zeros((3,1))  # 三个智能体的入轨状态
-    Sat_done_flag = np.zeros((3,1))  # 三个智能体的完成状态
+    Sat_inject_flag = np.zeros((num_ff,1))  # 三个智能体的入轨状态
+    Sat_done_flag = np.zeros((num_ff,1))  # 三个智能体的完成状态
     '''提前开辟存储空间,为了在所有智能体执行完动作后, 统一统计动作reward导致的不能在3号智能体还没算完的时候
     你就把memorypush进去了, 你得等3个全部算完, 你就必须得把next——state啥的这些玩意存下来'''
     data_saver4push = np.empty((num_ff, 7), dtype=object)
@@ -365,7 +365,7 @@ def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, 
                 multi_agent_seq[index_start:index_end] = Free(t_r - dT_ex,0,Multi_Agent_state[ref_i,:], 1)
                 # target 的外推原点一直是公元0年 所以加一个 T_scn
                 multi_target_seq[index_start:index_end] = Free(T_scn + t_r,0, Multi_target_state_ini[ref_i,:], 1)
-           
+        
             '''我去，这个dumm是 来自每个真实智能体 在上一步输出的 next_Multi_dumm_state 构成的，然后
              在input里取出自己想要的即可，这样分立地都实现了MPC外推，我真太牛逼了 '''
             input_multi_dumm_state[sat_i*6:sat_i*6+6] = Multi_dumm_state[ref_i,:]

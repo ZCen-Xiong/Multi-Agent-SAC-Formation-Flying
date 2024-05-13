@@ -43,9 +43,9 @@ args={'policy':"Gaussian", # Policy Type: Gaussian | Deterministic (default: Gau
         'start_steps':1000, # Steps sampling random actions (default: 10000) 在开始训练之前完全随机地进行动作以收集数据
         'target_update_interval':10, # Value target update per no. of updates per step (default: 1) 目标网络更新的间隔
         'replay_size':10000000, # size of replay buffer (default: 10000000)
-        'cuda':True, # run on CUDA (default: False)
-        'LOAD PARA': False, #是否读取参数
-        'task':'Train', # 测试或训练或画图, Train,Test,Plot
+        'cuda':False, # run on CUDA (default: False)
+        'LOAD PARA': True, #是否读取参数
+        'task':'Plot', # 测试或训练或画图, Train,Test,Plot
         'activation':nn.ReLU, #激活函数类型
         'plot_type':'2D-2line', #'3D-1line'为三维图, 一条曲线；'2D-2line'为二维图, 两条曲线
         'plot_title':'reward-steps.png',
@@ -75,6 +75,9 @@ horizon = 5
 num_ff = 3 # 编队卫星数量
 '''分配每个星的参考对象'''
 ref_sat_distro = np.array([[1,2],[0,2],[0,1]])
+# num_ff = 4 # 编队卫星数量
+# '''分配每个星的参考对象'''
+# ref_sat_distro = np.array([[1,3],[0,2],[1,3],[0,2]])
 
 env_f = env.Rel_trans(sma, thrust, ref_p, T_f, discreT,Cd,R,Q11,Q22,S11,S22, horizon)
 # Agent
@@ -120,7 +123,7 @@ if args['task']=='Train':
         episode_steps = 0
 
         '''start from here'''
-        agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 1.0, seed = None)
+        agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = None ,ini_phi = None, seed = None)
         # reset之后得到的全是归一化的变量
         dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
         # 这个只是得到了7颗卫星的初始状态, 没有光锥状态, 切记勿搞混（7是示例, 因为物理中没有7做常数
@@ -145,9 +148,6 @@ if args['task']=='Train':
             travel, new_Multi_Agent_state, new_Multi_dumm_state, All_Inject, Alldone,reward_ave_all = multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
             Multi_Agent_state = new_Multi_Agent_state
             Multi_dumm_state = new_Multi_dumm_state
-            if  episode_steps == 15:
-                pass
-                qq = 114
             ''''end here'''
             episode_steps += 1
             episode_reward += reward_ave_all # 没用gamma是因为在 sac 里求q的时候用了
@@ -191,6 +191,7 @@ if args['task']=='Train':
             done_num=0
             for _  in range(episodes):
                 '''start'''
+                episode_reward = 0
                 agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 0.0, seed = None)
                 # reset之后得到的全是归一化的变量
                 dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
@@ -254,16 +255,36 @@ if args['task']=='Test':
     episodes = 100
     done_num=0
     for i  in range(episodes):
-        state = env_f.reset()
         episode_reward = 0
-        Alldone = False
-        steps=0
-        while not Alldone:
-            action = agent.select_action(state, evaluate=False) #evaluate为True时为确定性网络, 直接输出mean
-            next_state_env, reward, Alldone, All_Inject = env_f.step(action)
-            episode_reward += reward
-            state = next_state_env
-            steps+=1
+        '''start'''
+        # agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = [0.2,0.4,0.3,0.8],ini_phi = 0.0, seed = None)
+        agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(ini_fin_in = None,ini_phi = None, seed = None)
+        # reset之后得到的全是归一化的变量
+        dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
+        # 这个只是得到了7颗卫星的初始状态, 没有光锥状态, 切记勿搞混（7是示例, 因为物理中没有7做常数
+        '''每一轮的外推就是用这个状态'''
+        # 智能体的单个状态，用于迭代记录
+        Multi_Agent_state = np.zeros((num_ff,6))
+        Multi_target_state_ini = np.zeros((num_ff,6))
+        for sat_index in range(num_ff):            
+            phase_diff = 2*np.pi/num_ff
+            pseu_t = phase_diff*sat_index
+            Multi_Agent_state[sat_index,:] = Free(pseu_t,0,agent_A,1)
+            # 一直保持初始
+            Multi_target_state_ini[sat_index,:] = Free(pseu_t,0,target_A,1)
+        #     
+        Multi_dumm_state = Multi_Agent_state
+        # 进入外推
+        # 外推嵌套关系：1、时间（2、挨个agent(3、agent参考的3个agent 挨个录入（4、每个被参考的agent计算horizon光锥）))
+        travel = 0 
+        '''开始外推, 每轮只用更新Multi_Agent_state, 因为 Multi_target_seq 永远从初始时刻 Multi_target_state_ini 推得'''
+        test_steps = 0
+        while True: 
+            # new 和 next在这里代表的变量含义相同，区分内部外部
+            travel, new_Multi_Agent_state, new_Multi_dumm_state, All_Inject, Alldone, reward_ave_all = multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
+            Multi_Agent_state = new_Multi_Agent_state
+            Multi_dumm_state = new_Multi_dumm_state
+            test_steps +=1
             if All_Inject:
                 done_num+=1
             if Alldone:
@@ -282,30 +303,51 @@ if args['task']=='Plot':
     # Sat1_array,Sat2_array,Sat3_array = np.zeros((T_f/discreT,3))
     Satpos_array = np.zeros((3,np.ceil(T_f/discreT).astype(int),3))
     '''初末轨道'''
-    in_fin_orbi = np.array([0.2,0.15,0.25,0.35])*np.pi
+    in_fin_orbi = np.array([0.2,0.4,0.3,0.8])
     '''相位'''
-    ini_phi = 0.1*np.pi
+    ini_phi = 0.1
     state = env_f.reset(in_fin_orbi, ini_phi)
     Alldone = False
     steps=0
     heading_reward_all = 0
-    while not Alldone:
-        #evaluate为True时为确定性网络, 直接输出mean
-        action = agent.select_action(state, evaluate=True) 
-        next_state_env, Alldone, All_Inject, state_list,hw = env_f.plotstep(action)
-        print(steps)
-        state = next_state_env
-        heading_reward_all += hw
-        steps+=1
+
+    agent_A, dummy_A, target_A, heading_ex, dT_ex, T_f_ex = env_f.reset(in_fin_orbi ,ini_phi, seed = None)
+    # reset之后得到的全是归一化的变量
+    dep_param = np.array([horizon, num_ff ,ref_sat_distro, heading_ex, dT_ex, T_f_ex], dtype=object)
+    # 这个只是得到了7颗卫星的初始状态, 没有光锥状态, 切记勿搞混（7是示例, 因为物理中没有7做常数
+    '''每一轮的外推就是用这个状态'''
+    # 智能体的单个状态，用于迭代记录
+    Multi_Agent_state = np.zeros((num_ff,6))
+    Multi_target_state_ini = np.zeros((num_ff,6))
+    for sat_index in range(num_ff):            
+        phase_diff = 2*np.pi/num_ff
+        pseu_t = phase_diff*sat_index
+        Multi_Agent_state[sat_index,:] = Free(pseu_t,0,agent_A,1)
+        # 一直保持初始
+        Multi_target_state_ini[sat_index,:] = Free(pseu_t,0,target_A,1)
+    #     
+    Multi_dumm_state = Multi_Agent_state
+    # 进入外推
+    # 外推嵌套关系：1、时间（2、挨个agent(3、agent参考的3个agent 挨个录入（4、每个被参考的agent计算horizon光锥）))
+    travel = 0 
+    '''开始外推, 每轮只用更新Multi_Agent_state, 因为 Multi_target_seq 永远从初始时刻 Multi_target_state_ini 推得'''
+    steps = 0
+    heading_reward_all = 0
+    while True: 
+        for sat_j in range(num_ff):
+            Satpos_array[sat_j,steps,:] = Multi_Agent_state[sat_j,0:3]
+        # new 和 next在这里代表的变量含义相同，区分内部外部
+        travel, new_Multi_Agent_state, _, All_Inject, Alldone, reward_ave_all = multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, Multi_target_state_ini, dep_param)
+        Multi_Agent_state = new_Multi_Agent_state
+        heading_reward_all += reward_ave_all
+        steps +=1
+        
+        if All_Inject:
+            done_num+=1
         if Alldone:
             break
+
     print(heading_reward_all)
-    tri_state = np.array(state_list)
-    for i in range(tri_state.shape[0]):
-        for sat_j in range(3):
-            Satpos_array[sat_j,i,:] = tri_state[i,sat_j*6:sat_j*6+3]
-        # Sat2_array.append(plot_data[i][6:9]/1000)
-        # Sat3_array.append(plot_data[i][12:15]/1000)
     '''plot the ini and final orbit'''
     ini_orb_state = env_f.orbit_i0
     fin_orb_state = env_f.orbit_f0
@@ -316,7 +358,7 @@ if args['task']=='Plot':
         Xi_orbit[:, j] = Free(t_period[j], 0, ini_orb_state, 1)
         Xf_orbit[:, j] = Free(t_period[j], 0, fin_orb_state, 1)
     fig = plt.figure()
-    ax = fig.gca(projection='3d') 
+    ax = fig.add_subplot(111, projection='3d')
     ax.plot(Xi_orbit[0, :], Xi_orbit[1, :], Xi_orbit[2, :], 'k')
     ax.plot(Xf_orbit[0, :], Xf_orbit[1, :], Xf_orbit[2, :], 'r')
     for sat_j in range(3):    
