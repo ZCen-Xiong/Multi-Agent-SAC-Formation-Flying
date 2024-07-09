@@ -15,4 +15,4 @@ Finally, the performance of the proposed DRL methods was analyzed. Compared to t
 
 formation flying
 
-![MASAC STRUCTURE](masac_structure.png)
+![MASAC STRUCTURE](MASAC_test.png)
