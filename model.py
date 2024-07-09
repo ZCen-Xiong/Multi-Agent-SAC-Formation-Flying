@@ -112,20 +112,20 @@ class GaussianPolicy(nn.Module):
         # and look in appendix C. This is a more numerically-stable equivalent to Eq 21.
         # Try deriving it yourself as a (very difficult) exercise. :)
         # 证明中用到了概率密度变换公式：y=g(x)，x,y均为随机变量，则概率密度函数有fy=fx·(dx/dy)（利用分布函数求导得概率密度很容易证明）
-        log_prob = normal.log_prob(x_t).sum(axis=-1)
-        # 从论文结果到代码实现见根目录附图
-        '''对于多维输出的情况，可以使用多维输出的 log 概率直接求和作为网络的 log 概率的原因是，假设各个维度之间是独立的。
-        在连续动作空间中，策略网络通常输出一个多维向量，表示动作的各个维度。对于每个维度，可以假设输出是独立的，即每个维度的输出不受其他维度的影响。
-        根据概率论中的乘法规则，当多个事件是独立的时，它们的联合概率可以通过各个事件的概率的乘积计算得到。
-        因此，对于每个维度的动作，可以将其对应的 log 概率作为独立事件的概率，并将它们求和得到整体动作的 log 概率。
-        log(p1*p2*p3*p4)=logp1+logp2+logp3+logp4'''
-        log_prob -= (2*(np.log(2) - x_t - F.softplus(-2*x_t))).sum(axis=1)
-        # 用tanh限制正态分布范围，压到(-1,1)内
-        x_t = torch.tanh(x_t)
-        # 把动作扩到实际所需范围
-        action = self.action_scale * x_t + self.action_bias
-        mean = torch.tanh(mean) * self.action_scale + self.action_bias
-        return action, log_prob, mean
+        # log_prob = normal.log_prob(x_t).sum(axis=-1)
+        # # 从论文结果到代码实现见根目录附图
+        # '''对于多维输出的情况，可以使用多维输出的 log 概率直接求和作为网络的 log 概率的原因是，假设各个维度之间是独立的。
+        # 在连续动作空间中，策略网络通常输出一个多维向量，表示动作的各个维度。对于每个维度，可以假设输出是独立的，即每个维度的输出不受其他维度的影响。
+        # 根据概率论中的乘法规则，当多个事件是独立的时，它们的联合概率可以通过各个事件的概率的乘积计算得到。
+        # 因此，对于每个维度的动作，可以将其对应的 log 概率作为独立事件的概率，并将它们求和得到整体动作的 log 概率。
+        # log(p1*p2*p3*p4)=logp1+logp2+logp3+logp4'''
+        # log_prob -= (2*(np.log(2) - x_t - F.softplus(-2*x_t))).sum(axis=1)
+        # # 用tanh限制正态分布范围，压到(-1,1)内
+        # x_t = torch.tanh(x_t)
+        # # 把动作扩到实际所需范围
+        # action = self.action_scale * x_t + self.action_bias
+        # mean = torch.tanh(mean) * self.action_scale + self.action_bias
+        # return action, log_prob, mean
         
 
     def to(self, device):

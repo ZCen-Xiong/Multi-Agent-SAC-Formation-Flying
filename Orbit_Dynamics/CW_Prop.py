@@ -39,7 +39,7 @@ def orbitgen(nT, azi_0, ele_0, ref_p):
     v1 = np.array([np.cos(azi) * np.cos(ele),np.sin(azi) * np.cos(ele),np.sin(ele)]) * 200
     s = (-v1[0]*X_h_temp[0] - v1[1]*X_h_temp[1]) / v1[2]
 
-    while np.sqrt(0.5*(3*p**2 + s**2 + np.sqrt(9*p**4 + 6*p**2*s**2*np.cos(2*z_cw) + s**4)) + p**2) > ref_p:
+    while np.sqrt(0.5*(3*p**2 + s**2 + np.sqrt(9*p**4 + 6*p**2*s**2*np.cos(2*z_cw) + s**4)) + p**2) > ref_p*1.5:
         p = 0.95*p
         s = 0.95*s
 

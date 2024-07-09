@@ -15,8 +15,11 @@ class ReplayMemory:
         self.buffer[self.position] = (state, action, reward, next_state, done)
         self.position = (self.position + 1) % self.capacity #超出记忆池容量后从第一个开始改写以维持容量不超标
 
-    def sample(self, batch_size):
-        np.random.seed(42)
+    def sample(self, batch_size, seed_r = None):
+        # if seed_r is None:
+        #     random.seed(42)
+        # else:
+        #     random.seed(seed_r)
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
         '''zip()函数用于将多个可迭代对象（例如列表、元组等）的对应元素打包成一个元组，返回一个迭代器。

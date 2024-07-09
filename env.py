@@ -184,7 +184,7 @@ class Rel_trans:
         raw_point = np.dot(alpha,normal_track) + np.dot(beta,radius_track)
 
         # 使用连续的
-        target_weight = travel**(1/2)
+        target_weight = travel**(1/4)
         # 修正后的路径航点 3*(h*6)
         pred_point = raw_point * (1-target_weight) + target_seq
 
@@ -262,11 +262,11 @@ class Rel_trans:
 
         
         # 计算一个无面积奖励的奖励，实际上就是只有控制惩罚
-        reward = exc_t_rewa * (1 - travel**(1/2)) * heading_reward - exc_t_puni*1e-3*travel**(1/5)*(
-            dV + 3*(np.linalg.norm(J_agent)-np.linalg.norm(J_dumm)))
+        reward = (exc_t_rewa * (1 - travel**(1/2)) * heading_reward - exc_t_puni*travel**(1/5)*(
+            dV + 3*(np.linalg.norm(J_agent)-np.linalg.norm(J_dumm))))*1e-4
         
         if np.linalg.norm(J_agent)-np.linalg.norm(J_dumm)>100 and np.linalg.norm(J_dumm)<1:
-            reward = -1e3
+            reward = -1e1
 
             # 收敛极限
             # Conv_tol = 10
@@ -352,8 +352,8 @@ def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, 
     for sat_index in range(num_ff):
         # 下面整理输入
         # 读取agent的参考, 例如, 1号agent要参考6,3,那么序列的顺序就是1,6,3
-        local_ref = np.array([sat_index, *ref_sat_distro[sat_index,:]])
-
+        # local_ref = np.array([sat_index, *ref_sat_distro[sat_index,:]])
+        local_ref = ref_sat_distro[sat_index,:]
         for sat_i, ref_i in zip(range(3), local_ref):
             for ri in range(0,horizon):
                 # 预测序列是按这样布置的, 先把第一个智能体的1-5步放完, 再把第二个智能体的1-5步放完, 再放第三个智能体的1-5步
@@ -428,11 +428,11 @@ def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, 
         if np.linalg.norm(J_indv_dummy)<1e-1:
             exc_t_rewa = 0.0
         # 仿照内部
-        reward_push = exc_t_rewa * (1 - travel**(1/2)) *heading_reward_all - exc_t_puni*1e-3*travel**(1/5)*(
+        reward_push = exc_t_rewa * (1 - travel**(1/2)) *heading_reward_all*1e-4 - exc_t_puni*1e-4*travel**(1/5)*(
             dV_indv + 3*(np.linalg.norm(J_indv_agent)-np.linalg.norm(J_indv_dummy))) + reward_pseudo*0.1
         
         if np.linalg.norm(J_indv_agent)-np.linalg.norm(J_indv_dummy)>100 and np.linalg.norm(J_indv_dummy)<1:
-            reward_push = -1e3
+            reward_push = -1e1
 
         # 收敛极限
         Conv_tol = 5
@@ -452,7 +452,7 @@ def multi_step(agent,env_f,memory, travel, Multi_Agent_state, Multi_dumm_state, 
                 isInject += 1
                 if Sat_inject_flag[sat_index,0] == 0: 
                     '''到达目标轨道的智能体不再重复获得奖励'''
-                    reward_push += 10000
+                    reward_push += 100
                     Sat_inject_flag[sat_index,0] = 1
         '''[action, state_env_input, next_state_env, J_f_agent, J_f_dummy, reward, dV]'''
         action_push = data_saver4push[sat_index,0]
