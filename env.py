@@ -184,7 +184,7 @@ class Rel_trans:
         raw_point = np.dot(alpha,normal_track) + np.dot(beta,radius_track)
 
         # 使用连续的
-        target_weight = travel**(1/4)
+        target_weight = travel
         # 修正后的路径航点 3*(h*6)
         pred_point = raw_point * (1-target_weight) + target_seq
 
