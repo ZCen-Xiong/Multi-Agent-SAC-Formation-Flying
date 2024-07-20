@@ -38,14 +38,14 @@ args={'policy':"Gaussian", # Policy Type: Gaussian | Deterministic (default: Gau
         'automatic_entropy_tuning':False, # Automaically adjust α (default: False)
         'batch_size':512, # batch size (default: 256)
         'num_steps':1000, # maximum number of steps (default: 1000000)
-        'hidden_sizes':[1024,512,512,256], # 隐藏层大小, 带有激活函数的隐藏层层数等于这一列表大小
+        'hidden_sizes':[1024,512,256], # 隐藏层大小, 带有激活函数的隐藏层层数等于这一列表大小
         'updates_per_step':1, # model updates per simulator step (default: 1) 每步对参数更新的次数
         'start_steps':1000, # Steps sampling random actions (default: 10000) 在开始训练之前完全随机地进行动作以收集数据
         'target_update_interval':10, # Value target update per no. of updates per step (default: 1) 目标网络更新的间隔
         'replay_size':10000000, # size of replay buffer (default: 10000000)
         'cuda':False, # run on CUDA (default: False)
-        'LOAD PARA': True, #是否读取参数
-        'task':'Plot', # 测试或训练或画图, Train,Test,Plot
+        'LOAD PARA': False, #是否读取参数
+        'task':'Train', # 测试或训练或画图, Train,Test,Plot
         'activation':nn.ReLU, #激活函数类型
         'plot_type':'2D-2line', #'3D-1line'为三维图, 一条曲线；'2D-2line'为二维图, 两条曲线
         'plot_title':'reward-steps.png',
@@ -74,7 +74,7 @@ horizon = 5
 
 num_ff = 3 # 编队卫星数量
 '''分配每个星的参考对象'''
-ref_sat_distro = np.array([[1,2],[0,2],[0,1]])
+ref_sat_distro = np.array([[0,1,2],[1,2,0],[2,0,1]])
 # num_ff = 4 # 编队卫星数量
 # '''分配每个星的参考对象'''
 # ref_sat_distro = np.array([[1,3],[0,2],[1,3],[0,2]])
