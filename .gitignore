@@ -7,3 +7,4 @@ Orbit_Dynamics/Lambert_Solve.py
 Orbit_Dynamics/Coordinate_Transformation.py
 sofarsogood.pt
 model/
+env.py
