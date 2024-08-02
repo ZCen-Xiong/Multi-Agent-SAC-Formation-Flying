@@ -3,9 +3,9 @@ import numpy as np
 import itertools
 import torch.nn as nn
 import random
-from sac import SAC
+from sac_multi import SAC
 #from torch.utils.tensorboard import SummaryWriter
-from replay_memory import ReplayMemory
+from replay_mem_multi import ReplayMemory
 import env 
 import time
 import matplotlib.pyplot as plt
