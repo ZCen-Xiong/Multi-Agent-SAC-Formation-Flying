@@ -99,6 +99,7 @@ class MASAC(object):
         '''infer 被推测项 不提供熵项'''
         # _, _, pi_2 = self.policy.sample(sb_[1])
         # _, _, pi_3 = self.policy.sample(sb_[2])
+        # 使用平均化输出作为对其他的估计，此时使用的网络是真的其他的网络
         _, _, pi_2 = oth_agt[(agt_idx+1)%3].policy.sample(sb_[1])
         _, _, pi_3 = oth_agt[(agt_idx+2)%3].policy.sample(sb_[2])
         # pi_2 = torch.FloatTensor(ab_[1]).to(self.device) 
